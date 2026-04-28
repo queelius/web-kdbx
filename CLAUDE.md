@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Pre-design. The repo currently contains only this CLAUDE.md, a README skeleton, and `docs/superpowers/kickoff.md` (which captures the conceptual groundwork from prior brainstorming and lists the questions the first design session needs to settle).
 
-**Before writing code or scaffolding a Cargo/npm project here, run a brainstorming session against `docs/superpowers/kickoff.md`.** That doc surfaces the open questions; the brainstorm settles them and produces a `docs/superpowers/specs/` document, which then drives an implementation plan in `docs/superpowers/plans/`. This is the same flow used for the sibling project `diff-kdbx` (see `~/github/beta/diff-kdbx/`).
+**Before writing code or scaffolding a Cargo/npm project here, run a brainstorming session against `docs/superpowers/kickoff.md`.** That doc surfaces the open questions; the brainstorm settles them and produces a `docs/superpowers/specs/` document, which then drives an implementation plan in `docs/superpowers/plans/`. This is the same flow used for the sibling project `diff-kdbx` (see `~/github/kdbx/diff-kdbx/`).
 
 ## Position in the ecosystem
 
@@ -19,5 +19,5 @@ Pre-design. The repo currently contains only this CLAUDE.md, a README skeleton, 
 
 ## Key cross-repo references
 
-- `~/github/beta/diff-kdbx/`: the library this project will consume via WASM. Read its CLAUDE.md, spec, and plan first.
+- `~/github/kdbx/diff-kdbx/`: the library this project will consume via WASM. Read its CLAUDE.md, spec, and plan first.
 - `~/github/repos/cryptoid/`, `~/github/repos/pagevault/`, `~/github/repos/sigmark/`: sibling browser-side crypto projects. Not part of `*-kdbx`, but operate in the same "static-first secrets stack" worldview.
