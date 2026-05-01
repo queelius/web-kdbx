@@ -1,6 +1,8 @@
 /target
+/pkg
 /node_modules
 /dist
-/pkg
-*.rs.bk
+**/*.rs.bk
 .DS_Store
+tests/e2e/test-results/
+tests/e2e/playwright-report/

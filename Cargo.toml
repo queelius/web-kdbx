@@ -1,0 +1,38 @@
+[package]
+name = "web-kdbx"
+description = "Browser-side KDBX viewer (read-only Layer 0 of the *-kdbx ecosystem)"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["Alexander Towell <lex@metafunctor.com>"]
+license = "MIT"
+repository = "https://github.com/queelius/web-kdbx"
+documentation = "https://docs.rs/web-kdbx"
+readme = "README.md"
+keywords = ["keepass", "kdbx", "wasm", "webassembly", "viewer"]
+categories = ["wasm", "cryptography"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+keepass = { version = "0.12", features = ["serialization"] }
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde-wasm-bindgen = "0.6"
+serde_json = "1"
+js-sys = "0.3"
+totp-lite = "2"
+base32 = "0.5"
+url = "2"
+uuid = { version = "1", features = ["serde"] }
+sha2 = "0.10"
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

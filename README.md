@@ -1,5 +1,5 @@
 # web-kdbx
 
-Browser-side KDBX viewer/editor. The anchor of the `*-kdbx` ecosystem.
+Browser-side KDBX viewer (read-only). The anchor of the *-kdbx ecosystem.
 
-**Status:** pre-design. See `docs/superpowers/kickoff.md` for the conceptual groundwork and the questions the first brainstorm session needs to answer.
+Status: in development. See `docs/superpowers/specs/2026-04-29-web-kdbx-design.md` for the design and `docs/superpowers/plans/2026-04-29-web-kdbx.md` for the plan.
