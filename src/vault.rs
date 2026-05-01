@@ -1,8 +1,6 @@
 //! The Vault: wraps a keepass::Database and exposes browser-shaped accessors.
 
-#[allow(unused_imports)]
 use crate::types::*;
-#[allow(unused_imports)]
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 
@@ -33,6 +31,25 @@ impl Vault {
     pub fn version(&self) -> String {
         self.db.config.version.to_string()
     }
+
+    /// Return the full group hierarchy as a serializable tree.
+    pub fn group_tree(&self) -> Result<JsValue, JsError> {
+        let root_ref = self.db.root();
+        let summary = walk_group(&root_ref);
+        to_value(&summary).map_err(|e| JsError::new(&e.to_string()))
+    }
+}
+
+fn walk_group(group: &keepass::db::GroupRef<'_>) -> GroupSummary {
+    let uuid = group.id().uuid().to_string();
+    let name = group.name.clone();
+    let icon = match group.icon() {
+        Some(keepass::db::Icon::BuiltIn(n)) => Some(*n as u32),
+        _ => None,
+    };
+    let entry_count = group.entries().count();
+    let children: Vec<GroupSummary> = group.groups().map(|child_ref| walk_group(&child_ref)).collect();
+    GroupSummary { uuid, name, icon, entry_count, children }
 }
 
 impl Vault {
