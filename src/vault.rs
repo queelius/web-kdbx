@@ -68,6 +68,39 @@ impl Vault {
         Some(value.get().to_string())
     }
 
+    /// Compute the current TOTP code. Returns null on the JS side if the
+    /// entry has no `otp` field or the value is not a parseable
+    /// otpauth:// URI.
+    pub fn totp(&self, entry_uuid: &str) -> Result<JsValue, JsError> {
+        let entry_ref = match self.find_entry(entry_uuid) {
+            Some(e) => e,
+            None => {
+                return to_value(&Option::<crate::totp::TotpCode>::None)
+                    .map_err(|e| JsError::new(&e.to_string()));
+            }
+        };
+        let entry: &keepass::db::Entry = &*entry_ref;
+
+        let uri = match entry.fields.get("otp").map(|v| v.get()) {
+            Some(s) => s.to_string(),
+            None => {
+                return to_value(&Option::<crate::totp::TotpCode>::None)
+                    .map_err(|e| JsError::new(&e.to_string()));
+            }
+        };
+
+        let cfg = match crate::totp::TotpConfig::parse(&uri) {
+            Some(c) => c,
+            None => {
+                return to_value(&Option::<crate::totp::TotpCode>::None)
+                    .map_err(|e| JsError::new(&e.to_string()));
+            }
+        };
+
+        let code = cfg.compute_now();
+        to_value(&Some(code)).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     pub fn entry(&self, entry_uuid: &str) -> Result<JsValue, JsError> {
         let target = match uuid::Uuid::parse_str(entry_uuid) {
             Ok(u) => u,
