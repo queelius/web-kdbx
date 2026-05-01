@@ -55,6 +55,11 @@ impl Vault {
         to_value(&summaries).map_err(|e| JsError::new(&e.to_string()))
     }
 
+    pub fn search(&self, query: &str) -> Result<JsValue, JsError> {
+        let results = crate::search::search(&self.db, query);
+        to_value(&results).map_err(|e| JsError::new(&e.to_string()))
+    }
+
     /// Return plaintext for a single field. Returns None if not found.
     pub fn reveal_field(&self, entry_uuid: &str, field_name: &str) -> Option<String> {
         let entry_ref = self.find_entry(entry_uuid)?;
