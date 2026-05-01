@@ -5,3 +5,6 @@
 pub mod attachments;
 pub mod totp;
 pub mod types;
+pub mod vault;
+
+pub use vault::Vault;
