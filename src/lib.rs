@@ -2,4 +2,5 @@
 //!
 //! Layer 0 of the *-kdbx ecosystem.
 
+pub mod totp;
 pub mod types;
