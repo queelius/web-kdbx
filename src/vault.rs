@@ -55,6 +55,14 @@ impl Vault {
         to_value(&summaries).map_err(|e| JsError::new(&e.to_string()))
     }
 
+    /// Return plaintext for a single field. Returns None if not found.
+    pub fn reveal_field(&self, entry_uuid: &str, field_name: &str) -> Option<String> {
+        let entry_ref = self.find_entry(entry_uuid)?;
+        let entry: &keepass::db::Entry = &*entry_ref;
+        let value = entry.fields.get(field_name)?;
+        Some(value.get().to_string())
+    }
+
     pub fn entry(&self, entry_uuid: &str) -> Result<JsValue, JsError> {
         let target = match uuid::Uuid::parse_str(entry_uuid) {
             Ok(u) => u,
