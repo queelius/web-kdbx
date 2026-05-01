@@ -2,7 +2,7 @@
 name = "web-kdbx"
 description = "Browser-side KDBX viewer (read-only Layer 0 of the *-kdbx ecosystem)"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 rust-version = "1.85"
 authors = ["Alexander Towell <lex@metafunctor.com>"]
 license = "MIT"
