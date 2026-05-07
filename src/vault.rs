@@ -47,8 +47,10 @@ impl Vault {
     pub fn entries_in_group(&self, group_uuid: &str) -> Result<JsValue, JsError> {
         let target = match uuid::Uuid::parse_str(group_uuid) {
             Ok(u) => u,
-            Err(_) => return to_value(&Vec::<EntrySummary>::new())
-                .map_err(|e| JsError::new(&e.to_string())),
+            Err(_) => {
+                return to_value(&Vec::<EntrySummary>::new())
+                    .map_err(|e| JsError::new(&e.to_string()));
+            }
         };
 
         let root_id = self.db.root().id();
@@ -68,7 +70,7 @@ impl Vault {
     /// Return plaintext for a single field. Returns None if not found.
     pub fn reveal_field(&self, entry_uuid: &str, field_name: &str) -> Option<String> {
         let entry_ref = self.find_entry(entry_uuid)?;
-        let entry: &keepass::db::Entry = &*entry_ref;
+        let entry: &keepass::db::Entry = &entry_ref;
         let value = entry.fields.get(field_name)?;
         Some(value.get().to_string())
     }
@@ -84,7 +86,7 @@ impl Vault {
                     .map_err(|e| JsError::new(&e.to_string()));
             }
         };
-        let entry: &keepass::db::Entry = &*entry_ref;
+        let entry: &keepass::db::Entry = &entry_ref;
 
         let uri = match entry.fields.get("otp").map(|v| v.get()) {
             Some(s) => s.to_string(),
@@ -109,8 +111,10 @@ impl Vault {
     pub fn entry(&self, entry_uuid: &str) -> Result<JsValue, JsError> {
         let target = match uuid::Uuid::parse_str(entry_uuid) {
             Ok(u) => u,
-            Err(_) => return to_value(&Option::<EntryDetail>::None)
-                .map_err(|e| JsError::new(&e.to_string())),
+            Err(_) => {
+                return to_value(&Option::<EntryDetail>::None)
+                    .map_err(|e| JsError::new(&e.to_string()));
+            }
         };
 
         let root_id = self.db.root().id();
@@ -188,8 +192,17 @@ fn walk_group(group: &keepass::db::GroupRef<'_>) -> GroupSummary {
         _ => None,
     };
     let entry_count = group.entries().count();
-    let children: Vec<GroupSummary> = group.groups().map(|child_ref| walk_group(&child_ref)).collect();
-    GroupSummary { uuid, name, icon, entry_count, children }
+    let children: Vec<GroupSummary> = group
+        .groups()
+        .map(|child_ref| walk_group(&child_ref))
+        .collect();
+    GroupSummary {
+        uuid,
+        name,
+        icon,
+        entry_count,
+        children,
+    }
 }
 
 impl Vault {
@@ -308,7 +321,7 @@ fn build_entry_summary(entry: &keepass::db::EntryRef<'_>) -> EntrySummary {
 
 fn build_entry_detail(entry_ref: keepass::db::EntryRef<'_>, group_path: String) -> EntryDetail {
     let summary = build_entry_summary(&entry_ref);
-    let entry: &keepass::db::Entry = &*entry_ref;
+    let entry: &keepass::db::Entry = &entry_ref;
 
     let mut fields = Vec::new();
     for (name, value) in &entry.fields {

@@ -42,10 +42,8 @@ impl TotpConfig {
         for (k, v) in url.query_pairs() {
             match k.as_ref() {
                 "secret" => {
-                    secret = base32::decode(
-                        base32::Alphabet::Rfc4648 { padding: false },
-                        v.as_ref(),
-                    );
+                    secret =
+                        base32::decode(base32::Alphabet::Rfc4648 { padding: false }, v.as_ref());
                 }
                 "period" => {
                     if let Ok(p) = v.parse() {
@@ -160,18 +158,15 @@ mod test {
 
     #[test]
     fn compute_at_known_vector() {
-        let cfg = TotpConfig::parse(
-            "otpauth://totp/Test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
-        )
-        .expect("parse");
+        let cfg = TotpConfig::parse("otpauth://totp/Test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+            .expect("parse");
         let code = cfg.compute_at(59);
         assert_eq!(code.code, "287082");
     }
 
     #[test]
     fn seconds_remaining_at_window_boundary() {
-        let cfg = TotpConfig::parse("otpauth://totp/Test?secret=JBSWY3DPEHPK3PXP")
-            .expect("parse");
+        let cfg = TotpConfig::parse("otpauth://totp/Test?secret=JBSWY3DPEHPK3PXP").expect("parse");
         assert_eq!(cfg.compute_at(0).seconds_remaining, 30);
         assert_eq!(cfg.compute_at(29).seconds_remaining, 1);
         assert_eq!(cfg.compute_at(30).seconds_remaining, 30);

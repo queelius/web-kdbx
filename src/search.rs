@@ -17,11 +17,7 @@ fn build_haystack(entry: &keepass::db::EntryRef<'_>) -> EntryHaystack {
     let notes = entry.get("Notes").unwrap_or("");
     let tags_joined = entry.tags.join(" ");
 
-    let blob = format!(
-        "{} {} {} {} {}",
-        title, username, url, notes, tags_joined
-    )
-    .to_lowercase();
+    let blob = format!("{} {} {} {} {}", title, username, url, notes, tags_joined).to_lowercase();
 
     let modified = entry
         .times
