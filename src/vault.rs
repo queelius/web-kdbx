@@ -110,7 +110,7 @@ impl Vault {
 
         let root_id = self.db.root().id();
         let detail = find_entry_with_path(&self.db, root_id, target, "")
-            .map(|(entry_ref, group_path)| build_entry_detail(entry_ref, group_path, &self.db));
+            .map(|(entry_ref, group_path)| build_entry_detail(entry_ref, group_path));
 
         to_value(&detail).map_err(|e| JsError::new(&e.to_string()))
     }
@@ -208,11 +208,7 @@ fn build_entry_summary(entry: &keepass::db::EntryRef<'_>) -> EntrySummary {
     }
 }
 
-fn build_entry_detail(
-    entry_ref: keepass::db::EntryRef<'_>,
-    group_path: String,
-    db: &keepass::Database,
-) -> EntryDetail {
+fn build_entry_detail(entry_ref: keepass::db::EntryRef<'_>, group_path: String) -> EntryDetail {
     let summary = build_entry_summary(&entry_ref);
     let entry: &keepass::db::Entry = &*entry_ref;
 
@@ -236,7 +232,7 @@ fn build_entry_detail(
         (idx, n.clone())
     });
 
-    let attachments = crate::attachments::collect_attachment_summaries(entry, db);
+    let attachments = crate::attachments::collect_attachment_summaries(&entry_ref);
     let history_count = entry
         .history
         .as_ref()
