@@ -1,18 +1,29 @@
 # web-kdbx
 
-**Browser-side KDBX viewer.** Open a KeePass `.kdbx` file in any modern
-browser, type the master password, browse and search entries, copy
-credentials with auto-clear, generate TOTP codes. Read-only. No backend,
+**Browser-side KDBX viewer, embeddable as a web component.** Opens a
+KeePass `.kdbx` in any modern browser: master password unlock, group
+navigation, search, copy-with-auto-clear, TOTP. Read-only. No backend,
 no install, no plugin.
 
-The strongest distinctive feature: *portable read-only KeePassXC*. You are
-on a borrowed laptop, a Chromebook, a public terminal, a friend's
-machine. With desktop KeePassXC you cannot install. With web-kdbx you
-load a URL, drop in your `.kdbx`, type the password.
+The anchor of the `*-kdbx` ecosystem. The goal is **KDBX as structured
+content on the static web**: drop the viewer into a Hugo theme, embed
+encrypted records in a static site, render shared vaults inline. v0.1
+is Layer 0 (read-only). Future layers add storage backends (Layer 1),
+multi-recipient sharing (Layer 2), and synced editing (Layer 3). The
+L1+ direction is what makes this a different product from a personal
+vault app.
 
-The anchor of the *-kdbx ecosystem. v0.1 is Layer 0 (read-only). Future
-layers add storage backends (Layer 1), multi-recipient sharing
-(Layer 2), and synced editing (Layer 3).
+## Related work
+
+| Project | Shape | Use when |
+|---------|-------|----------|
+| [KeePassXC](https://keepassxc.org/) | Native desktop password manager | You want a full-featured personal vault app on Linux/macOS/Windows |
+| [OmniKee](https://github.com/OmniKee/OmniKee) | Tauri desktop + PWA + Android, also built on `keepass-rs` | You want a cross-platform standalone vault app, including a hosted PWA |
+| **web-kdbx** | Embeddable web component, ecosystem substrate | You want to render KDBX content inside a static site, or build on the `*-kdbx` ecosystem (`diff-kdbx`, `mcp-kdbx`, `hugo-kdbx`) |
+
+If you're looking for a personal vault to launch and use, KeePassXC or
+OmniKee will serve you better. web-kdbx exists for a different shape:
+KDBX as a content type on the static web, plus tooling around it.
 
 ## Status
 
