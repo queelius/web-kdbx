@@ -1,6 +1,6 @@
 [package]
 name = "web-kdbx"
-description = "Browser-side KDBX viewer (read-only Layer 0 of the *-kdbx ecosystem)"
+description = "Browser-side KDBX UI: read entries, edit with localStorage working copy, export via download (anchor of the *-kdbx ecosystem)"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
@@ -16,7 +16,7 @@ categories = ["wasm", "cryptography"]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-keepass = { version = "0.12", features = ["serialization"] }
+keepass = { version = "0.12", features = ["serialization", "save_kdbx4"] }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
