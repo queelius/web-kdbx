@@ -1,5 +1,5 @@
 import { el, showToast } from './util.js';
-import { loadVaultBytes, vaultIdFromAttrs } from '../storage.js';
+import { loadVaultBytes, saveWorkingCopy, vaultIdFromAttrs } from '../storage.js';
 
 class VaultApp extends HTMLElement {
   constructor() {
@@ -120,6 +120,55 @@ class VaultApp extends HTMLElement {
       ]
     );
     this.replaceChildren(card);
+  }
+
+  /**
+   * Auto-save chokepoint for L1 write operations.
+   *
+   * Future write tools (`Vault::update_field`, `Vault::add_entry`, etc.) return
+   * fresh encrypted KDBX bytes from the WASM Vault. Pass those bytes to this
+   * method to persist them to localStorage as the new working copy.
+   *
+   * Behavior by mode:
+   *   - Mode 1 hosted (`_vaultId` present): bytes are persisted via
+   *     `saveWorkingCopy(vaultId, bytes)`, the only sanctioned storage
+   *     write path. Subsequent reloads see the working copy.
+   *   - Mode 2 BYO (`_vaultId` absent): no-op save. Writes are in-memory only;
+   *     the user must use the Download button to export.
+   *
+   * Fires a `vault:dirty` custom event (bubbles, composed) after a successful
+   * save so UI components (mode banner, download button, etc.) can react.
+   * The event detail describes the mode and whether bytes were persisted:
+   *   - hosted: `{ mode: 'hosted', persisted: true, vaultId }`
+   *   - BYO:    `{ mode: 'byo', persisted: false }`
+   *
+   * `saveWorkingCopy` surfaces `QuotaExceededError` as a friendly Error;
+   * callers should catch and present a user-visible message. `storage.js`
+   * does not retry.
+   *
+   * @param {Uint8Array} newBytes - encrypted KDBX bytes from a write call
+   */
+  _persistAndNotify(newBytes) {
+    if (!this._vaultId) {
+      // BYO mode: no auto-save. Download is the only export path. Still
+      // dispatch vault:dirty so a future banner can prompt for download.
+      this.dispatchEvent(
+        new CustomEvent('vault:dirty', {
+          bubbles: true,
+          composed: true,
+          detail: { mode: 'byo', persisted: false },
+        })
+      );
+      return;
+    }
+    saveWorkingCopy(this._vaultId, newBytes);
+    this.dispatchEvent(
+      new CustomEvent('vault:dirty', {
+        bubbles: true,
+        composed: true,
+        detail: { mode: 'hosted', persisted: true, vaultId: this._vaultId },
+      })
+    );
   }
 
   renderUnlocked() {
