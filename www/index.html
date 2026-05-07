@@ -7,6 +7,11 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- Mode 1: hosted vault. Page bundles a specific .kdbx; localStorage holds working edits. -->
+  <!-- <vault-app vault-url="vault.kdbx"></vault-app> -->
+  <!-- <vault-app vault-url="vault.kdbx" vault-id="my-vault-2026"></vault-app> -->
+
+  <!-- Mode 2: bring-your-own. User picks a .kdbx file via the opener. -->
   <vault-app></vault-app>
   <script type="module" src="./app.js"></script>
 </body>

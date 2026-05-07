@@ -1,4 +1,5 @@
 import { el, showToast } from './util.js';
+import { loadVaultBytes, vaultIdFromAttrs } from '../storage.js';
 
 class VaultApp extends HTMLElement {
   constructor() {
@@ -7,10 +8,13 @@ class VaultApp extends HTMLElement {
     this.selectedGroupUuid = null;
     this.selectedEntryUuid = null;
     this._totpInterval = null;
+    // Mode + working-copy metadata; populated by _initLoad().
+    this._vaultId = null;
+    this._isWorkingCopy = false;
+    this._isHostedMode = false;
   }
 
   connectedCallback() {
-    this.renderLocked();
     this.addEventListener('vault-opened', (e) => this.handleVaultOpened(e));
     this.addEventListener('select-group', (e) => this.handleSelectGroup(e));
     this.addEventListener('select-entry', (e) => this.handleSelectEntry(e));
@@ -20,10 +24,102 @@ class VaultApp extends HTMLElement {
     this.addEventListener('copy-totp', (e) => this.handleCopyTotp(e));
     this.addEventListener('totp-refresh-request', (e) => this.handleTotpRefresh(e));
     this.addEventListener('lock', () => this.handleLock());
+    this._initLoad();
   }
 
-  renderLocked() {
-    this.replaceChildren(el('vault-opener'));
+  /**
+   * Resolve initial vault bytes via the storage adapter and route to the
+   * appropriate UI. Called from connectedCallback. Three branches:
+   *
+   *   1. loadVaultBytes returns { bytes, source, vaultId }
+   *      -> render the unlocker pre-populated with bytes (Mode 1).
+   *   2. loadVaultBytes returns null
+   *      -> render the file-picker opener (Mode 2 BYO).
+   *   3. loadVaultBytes throws (fetch failure for Mode 1)
+   *      -> render an error card with a retry control.
+   */
+  async _initLoad() {
+    const vaultUrl = this.getAttribute('vault-url');
+    const vaultIdAttr = this.getAttribute('vault-id');
+    this._isHostedMode = !!vaultUrl;
+
+    let initial;
+    try {
+      initial = await loadVaultBytes({ vaultUrl, vaultId: vaultIdAttr });
+    } catch (err) {
+      this._renderFetchError(vaultUrl, err);
+      return;
+    }
+
+    if (initial) {
+      this._vaultId = initial.vaultId;
+      this._isWorkingCopy = initial.source === 'localStorage';
+      this.renderLocked(initial);
+    } else {
+      // Mode 2 BYO. vaultId is unknown until the user picks a file; storage.js
+      // helpers handle that derivation later (Task 6).
+      this._vaultId = vaultIdFromAttrs({ vaultUrl, vaultId: vaultIdAttr });
+      this.renderLocked(null);
+    }
+  }
+
+  /**
+   * @param {{ bytes: Uint8Array, source: 'localStorage'|'bundled', vaultId: string }|null} initial
+   */
+  renderLocked(initial) {
+    const opener = el('vault-opener');
+    if (initial) {
+      // Configure preload state before connecting so connectedCallback
+      // renders the unlock card directly (no flicker through the picker).
+      const sourceLabel = this._isWorkingCopy
+        ? `${this.getAttribute('vault-url') || initial.vaultId} (working copy)`
+        : this.getAttribute('vault-url') || initial.vaultId;
+      const subtitle = this._isWorkingCopy
+        ? 'Local edits restored from this browser.'
+        : 'Loaded from bundled vault.';
+      opener.setPreloadedBytes(initial.bytes, {
+        label: sourceLabel,
+        subtitle,
+      });
+    }
+    this.replaceChildren(opener);
+  }
+
+  _renderFetchError(vaultUrl, err) {
+    const message = `Could not load vault from ${vaultUrl}: ${err.message || err}.`;
+    const retryBtn = el(
+      'button',
+      {
+        style: 'margin-top:1rem',
+        onclick: () => this._initLoad(),
+      },
+      ['Retry']
+    );
+    const fallbackBtn = el(
+      'button',
+      {
+        style: 'margin-top:1rem;margin-left:0.5rem',
+        onclick: () => {
+          this._isHostedMode = false;
+          this._vaultId = null;
+          this.renderLocked(null);
+        },
+      },
+      ['Open a different vault']
+    );
+    const card = el(
+      'div',
+      {
+        style:
+          'max-width:400px;margin:4rem auto;padding:1.5rem;background:var(--panel);border:1px solid var(--border);border-radius:8px',
+      },
+      [
+        el('h2', { style: 'margin-top:0' }, ['Vault unavailable']),
+        el('p', { class: 'error' }, [message]),
+        el('div', {}, [retryBtn, fallbackBtn]),
+      ]
+    );
+    this.replaceChildren(card);
   }
 
   renderUnlocked() {
@@ -137,7 +233,10 @@ class VaultApp extends HTMLElement {
     navigator.clipboard.writeText('').catch(() => {});
     this.selectedGroupUuid = null;
     this.selectedEntryUuid = null;
-    this.renderLocked();
+    // Re-resolve initial bytes via the storage adapter so a Mode 1 lock
+    // returns to the unlocker (with current localStorage working copy if
+    // present), and a Mode 2 lock returns to the file picker.
+    this._initLoad();
   }
 }
 
