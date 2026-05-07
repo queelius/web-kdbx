@@ -61,6 +61,23 @@ pub struct AttachmentSummary {
     pub size_bytes: usize,
 }
 
+/// Input for setting a single field on an entry. Deserialized from a JS object
+/// via `serde_wasm_bindgen` when callers invoke `Vault::add_entry`.
+#[derive(Debug, Deserialize)]
+pub struct FieldInput {
+    pub name: String,
+    pub value: String,
+    pub protected: bool,
+}
+
+/// Input for creating a new entry inside an existing group.
+#[derive(Debug, Deserialize)]
+pub struct EntryInput {
+    pub group_uuid: String,
+    pub title: String,
+    pub fields: Vec<FieldInput>,
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
