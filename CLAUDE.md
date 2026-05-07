@@ -10,7 +10,9 @@ User-facing summary and the four-layer roadmap: `README.md`. Full motivation, th
 
 ## Status
 
-v0.1 (Layer 0, read-only) implementation complete. Library + WASM glue + JS shell + four-layer test stack + CI all in place. Remaining v0.1 release task is manual cross-browser smoke (`docs/manual-testing.md`). L1 work is gated on L0 stability and on real demand for write capability.
+v0.1 (Layer 0, read-only) implementation complete. Library + WASM glue + JS shell + four-layer test stack + CI all in place. Remaining v0.1 release task is manual cross-browser smoke (`docs/manual-testing.md`).
+
+L1 (localStorage-backed working copy + download export) is in flight. Phase 1 of `docs/superpowers/plans/2026-05-06-web-kdbx-l1.md` shipped the Rust write API: `Vault::update_field`, `Vault::add_entry`, `Vault::save_to_bytes`, with the `DatabaseKey` retained on the Vault for re-encryption. Phases 2 (JS storage adapter), 3 (UI), 4 (tests), 5 (audit gates and docs) are still pending.
 
 ## Architecture: the non-obvious shape
 
@@ -24,7 +26,7 @@ v0.1 (Layer 0, read-only) implementation complete. Library + WASM glue + JS shel
 
 4. **Four-layer test stack** (`docs/testing.md`). Layer 1: `cargo test --lib` (native, ~5 sec). Layer 2: `tests/wasm_smoke.rs` via `wasm-pack test --headless --firefox` against committed `.kdbx` fixtures in `tests/fixtures/`. Layer 3: `tests/e2e/*.spec.ts` via Playwright + Firefox (real-browser flows for open, browse, reveal, lock). Layer 4: human cross-browser smoke. CI runs 1 through 3 plus a bundle-size warning gate.
 
-5. **Substrate is `keepass = "0.12"` (with `serialization` feature)**. One known upstream gap: `Entry.attachments` is `pub(crate)`, so `src/attachments.rs` works around it via a JSON round-trip. File new gaps as upstream issues at https://github.com/sseemayer/keepass-rs (one already open: #314, attachment-name enumeration). Local fork for upstream contributions: `~/github/bugfixes/track1-issues/keepass-rs/`.
+5. **Substrate is `keepass = "0.12.5"` (with `serialization` and `save_kdbx4` features)**. The 0.12.5 bump (from 0.12.1) was needed to pick up `EntryRef::attachments_named()` from upstream PR #321 (closes the old issue #314). `save_kdbx4` enables `Database::save` for the L1 write path. File new upstream gaps as issues at https://github.com/sseemayer/keepass-rs. Local fork for upstream contributions: `~/github/bugfixes/track1-issues/keepass-rs/`.
 
 6. **The Rust API surface lives in `src/vault.rs`**. `src/types.rs` defines the serde shapes that cross the WASM boundary. `src/search.rs`, `src/totp.rs`, `src/attachments.rs` are helpers, all natively-testable. The JS shell entry is `www/app.js` (loads WASM, registers components); `www/components/vault-app.js` is the top-level custom element that owns the `Vault` handle and routes events; the rest of `www/components/` are leaf elements that emit events and render via `util.js::el()`.
 
@@ -66,8 +68,8 @@ cd tests/e2e && npx playwright test open-flow         # one spec by substring
 
 ## Invariants to preserve
 
-- **Read-only.** v0.1 has no write path. There is no `save`, no `set_field`. L1 (localStorage-backed working copies) lives in the spec, not in code. Do not introduce a write API without going through the brainstorm, spec, plan flow first.
-- **No persistence.** No `localStorage`, `IndexedDB`, `OPFS`, Service Worker, or cookies in L0. The user's `.kdbx` enters memory on `Vault::open` and leaves with `vault.free()`.
+- **L0 read-only, L1 write API gated.** L0 ships no write path; the public Vault surface for L0 is read-only. L1's Rust write API (`update_field`, `add_entry`, `save_to_bytes`) is in code as of Phase 1 of the L1 plan, but the JS-side localStorage adapter is not yet wired. Until Phase 2 lands, calling the write API from JS will mutate the in-memory Vault but no persistence path exists, so the changes vanish on reload. Do not advertise write capability in the UI until Phase 2 (`docs/superpowers/plans/2026-05-06-web-kdbx-l1.md`) is complete.
+- **No persistence in L0; whole-blob localStorage in L1.** L0 has no `localStorage`, `IndexedDB`, `OPFS`, Service Worker, or cookies. L1 will introduce ONE localStorage key per vault, holding whole encrypted KDBX bytes (per the L1 storage spec). The audit gate at `scripts/ci-audit-storage.sh` (Phase 5 of the L1 plan) will enforce that no other persistence channels appear.
 - **XSS hygiene by construction.** Every JS component builds DOM via `document.createElement` + `textContent`, mediated by `el(tag, props, children)` in `www/components/util.js`. Never `innerHTML`, never tagged-template HTML. Every user-controlled value (entry titles, field values, group names) becomes a text node.
 - **Open-error conflation.** `Vault::open` returns the single message `"Wrong password or corrupt file."` for both wrong-password and corrupt-file cases. Differentiating them would leak whether a blob is valid KDBX before the password is known. Preserve the conflation.
 - **Bundle-size budget.** <500 KB for `web_kdbx_bg.wasm`, <50 KB for `app.js` + components. CI emits a warning (does not fail) above the WASM budget; new heavy dependencies require checking the budget.
@@ -83,7 +85,7 @@ For new features (the same flow used for the v0.1 ship and ready for L1):
 4. Execute via subagent-driven development (one subagent per task; two-stage review).
 5. Finish via the superpowers:finishing-a-development-branch skill.
 
-The v0.1 spec/plan pair (`2026-04-29-web-kdbx-design.md` / `2026-04-29-web-kdbx.md`) is the canonical example. The L1 spec (`2026-05-06-web-kdbx-l1-storage-design.md`) is the next vehicle.
+The v0.1 spec/plan pair (`2026-04-29-web-kdbx-design.md` / `2026-04-29-web-kdbx.md`) is the canonical example. The L1 spec/plan pair (`2026-05-06-web-kdbx-l1-storage-design.md` / `2026-05-06-web-kdbx-l1.md`) is in flight: Phase 1 (Rust write API) shipped; Phases 2 through 5 pending.
 
 ## Cross-references
 
