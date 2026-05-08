@@ -241,14 +241,29 @@ class VaultApp extends HTMLElement {
     const headerStyle =
       'display:flex;align-items:center;gap:1rem;padding:0.5rem;border-bottom:1px solid var(--border)';
 
+    const headerChildren = [
+      el('strong', {}, [this.vault.name() || 'Vault']),
+      el('span', { style: 'color:var(--muted)' }, [this.vault.version()]),
+      el('vault-search', { style: 'flex:1' }),
+      el('vault-download-button'),
+    ];
+
+    // Mode 1 only: bundled vault has a canonical state we can revert to.
+    // Mode 2 (BYO) is in-memory only with no fallback, so the button is
+    // suppressed there. `vault-url` attribute is the Mode 1 marker; vault-id
+    // routes the clearWorkingCopy call through storage.js.
+    const vaultUrl = this.getAttribute('vault-url');
+    if (vaultUrl) {
+      const revertBtn = el('vault-revert-button');
+      revertBtn.setVaultUrl(vaultUrl);
+      revertBtn.setVaultId(this._vaultId);
+      headerChildren.push(revertBtn);
+    }
+
+    headerChildren.push(el('vault-lock-button'));
+
     this.replaceChildren(
-      el('header', { style: headerStyle }, [
-        el('strong', {}, [this.vault.name() || 'Vault']),
-        el('span', { style: 'color:var(--muted)' }, [this.vault.version()]),
-        el('vault-search', { style: 'flex:1' }),
-        el('vault-download-button'),
-        el('vault-lock-button'),
-      ]),
+      el('header', { style: headerStyle }, headerChildren),
       el('div', { class: 'three-pane' }, [tree, list, detail])
     );
 

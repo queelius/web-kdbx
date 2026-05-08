@@ -27,6 +27,7 @@ async function main() {
     import('./components/vault-search.js'),
     import('./components/vault-lock-button.js'),
     import('./components/vault-download-button.js'),
+    import('./components/vault-revert-button.js'),
   ]);
 }
 
