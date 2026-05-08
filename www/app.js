@@ -23,6 +23,7 @@ async function main() {
     import('./components/vault-tree.js'),
     import('./components/vault-list.js'),
     import('./components/vault-detail.js'),
+    import('./components/vault-entry-edit.js'),
     import('./components/vault-search.js'),
     import('./components/vault-lock-button.js'),
     import('./components/vault-download-button.js'),

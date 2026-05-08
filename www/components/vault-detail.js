@@ -4,6 +4,7 @@ class VaultDetail extends HTMLElement {
   set entry(d) {
     this._entry = d;
     this._revealed = {};
+    this._editing = false;
     if (this._totpInterval) clearInterval(this._totpInterval);
     this._totpInterval = null;
     this.render();
@@ -11,6 +12,8 @@ class VaultDetail extends HTMLElement {
   }
 
   connectedCallback() {
+    this.addEventListener('vault-edit-saved', (e) => this._onEditSaved(e));
+    this.addEventListener('vault-edit-cancelled', (e) => this._onEditCancelled(e));
     this.render();
   }
 
@@ -38,14 +41,36 @@ class VaultDetail extends HTMLElement {
       );
       return;
     }
+    if (this._editing) {
+      this._renderEditor();
+      return;
+    }
     const e = this._entry;
 
-    const header = el('header', {}, [
-      el('h2', { style: 'margin:0' }, [e.summary.title]),
-      el('div', { style: 'color:var(--muted);font-size:0.9em' }, [
-        e.group_path,
-      ]),
-    ]);
+    const editButton = el(
+      'button',
+      {
+        type: 'button',
+        class: 'edit-entry-btn',
+        style: 'margin-left:auto',
+        onclick: () => this._enterEditMode(),
+      },
+      ['Edit']
+    );
+
+    const header = el(
+      'header',
+      { style: 'display:flex;align-items:flex-start;gap:0.5rem' },
+      [
+        el('div', {}, [
+          el('h2', { style: 'margin:0' }, [e.summary.title]),
+          el('div', { style: 'color:var(--muted);font-size:0.9em' }, [
+            e.group_path,
+          ]),
+        ]),
+        editButton,
+      ]
+    );
 
     const fieldNodes = e.fields.map((f) => this.buildFieldNode(f, e.summary.uuid));
     const fieldsBlock = el(
@@ -197,6 +222,54 @@ class VaultDetail extends HTMLElement {
     };
     refresh();
     this._totpInterval = setInterval(refresh, 1000);
+  }
+
+  // Switch the panel from read view to the editable form. The TOTP refresh
+  // interval is paused for the duration of editing; it resumes on
+  // save-or-cancel via the entry setter (or by re-entering read mode below).
+  _enterEditMode() {
+    if (!this._entry) return;
+    if (this._totpInterval) {
+      clearInterval(this._totpInterval);
+      this._totpInterval = null;
+    }
+    this._editing = true;
+    this.render();
+  }
+
+  _renderEditor() {
+    const app = this.closest('vault-app');
+    const vault = app && app.vault ? app.vault : null;
+    const editor = el('vault-entry-edit');
+    editor.setVault(vault);
+    editor.setApp(app);
+    editor.setEntry(this._entry);
+    this.replaceChildren(editor);
+  }
+
+  _onEditSaved(_e) {
+    this._editing = false;
+    // Re-pull the entry from the vault so the read view reflects the just
+    // saved state (including any field that flipped its protected flag).
+    const app = this.closest('vault-app');
+    if (app && app.vault && this._entry) {
+      const fresh = app.vault.entry(this._entry.summary.uuid);
+      if (fresh) this._entry = fresh;
+    }
+    this._revealed = {};
+    this.render();
+    if (this._entry && this._entry.summary && this._entry.summary.has_totp) {
+      this.startTotpRefresh();
+    }
+  }
+
+  _onEditCancelled(_e) {
+    this._editing = false;
+    this._revealed = {};
+    this.render();
+    if (this._entry && this._entry.summary && this._entry.summary.has_totp) {
+      this.startTotpRefresh();
+    }
   }
 }
 
