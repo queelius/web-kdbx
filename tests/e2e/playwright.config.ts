@@ -12,7 +12,11 @@ export default defineConfig({
   },
   projects: [{ name: 'firefox', use: { ...devices['Desktop Firefox'] } }],
   webServer: {
-    command: 'cd ../.. && python3 -m http.server 8000 --directory www',
+    // Serve from the repo root so that both /www/ (the app) and /pkg/
+    // (the WASM bundle produced by wasm-pack) are reachable. app.js imports
+    // '../pkg/web_kdbx.js' which resolves to /pkg/web_kdbx.js; that requires
+    // the server root to be the repo root, not www/.
+    command: 'cd ../.. && python3 -m http.server 8000',
     port: 8000,
     reuseExistingServer: !process.env.CI,
   },

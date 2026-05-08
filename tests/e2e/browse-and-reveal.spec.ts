@@ -5,7 +5,7 @@ const FIXTURE_DIR = path.resolve(__dirname, '../fixtures');
 const PW = 'test-password-do-not-use';
 
 async function unlock(page, fixture: string) {
-  await page.goto('/');
+  await page.goto('/www/');
   await page.locator('input[type="file"]').setInputFiles(
     path.join(FIXTURE_DIR, fixture)
   );

@@ -30,14 +30,23 @@ const KEY_PREFIX = 'web-kdbx:vault:';
  * the caller is responsible for assigning a vault-id later, e.g. from a
  * hash of uploaded bytes).
  *
+ * When vaultUrl is provided, returns its canonical absolute URL, resolving
+ * relative URLs against the document's base (document.baseURI). This ensures
+ * the id is stable regardless of whether the attribute is absolute,
+ * root-relative, or path-relative: e.g. `vault.kdbx` on a page at
+ * `/www/index.html` correctly resolves to `${origin}/www/vault.kdbx`, not
+ * the incorrect `${origin}/vault.kdbx` that a manual string-prefix would
+ * produce.
+ *
  * @param {{ vaultUrl?: string|null, vaultId?: string|null }} attrs
  * @returns {string|null}
  */
 export function vaultIdFromAttrs({ vaultUrl, vaultId }) {
   if (vaultId) return vaultId;
   if (vaultUrl) {
-    const path = vaultUrl.startsWith('/') ? vaultUrl : '/' + vaultUrl;
-    return `${location.origin}${path}`;
+    // Resolve relative to the document's base URL so the id is canonical
+    // regardless of whether the attribute is absolute, root-relative, or path-relative.
+    return new URL(vaultUrl, document.baseURI).href;
   }
   return null;
 }

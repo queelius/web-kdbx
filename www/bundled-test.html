@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Test page for bundled-vault Mode 1 e2e. Not part of the production demo.
+     Uses a .kdbx fixture co-located in www/ so python's http.server can serve it.
+     Password: test-password-do-not-use -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>web-kdbx bundled test</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <vault-app vault-url="fixtures-bundled-test.kdbx"></vault-app>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

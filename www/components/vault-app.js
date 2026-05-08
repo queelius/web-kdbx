@@ -61,6 +61,7 @@ class VaultApp extends HTMLElement {
     try {
       initial = await loadVaultBytes({ vaultUrl, vaultId: vaultIdAttr });
     } catch (err) {
+      console.error('[vault-app] Failed to load vault:', err);
       this._renderFetchError(vaultUrl, err);
       return;
     }
@@ -279,7 +280,12 @@ class VaultApp extends HTMLElement {
     // current state and is re-invoked on vault:dirty.
     const bannerStyle =
       'padding:0.4rem 0.75rem;background:var(--panel);border-bottom:1px solid var(--border);color:var(--muted);font-size:0.85rem';
-    this._bannerEl = el('div', { class: 'mode-banner', style: bannerStyle });
+    this._bannerEl = el('div', {
+      class: 'mode-banner',
+      style: bannerStyle,
+      role: 'status',
+      'aria-live': 'polite',
+    });
 
     this.replaceChildren(
       el('header', { style: headerStyle }, headerChildren),
