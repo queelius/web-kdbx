@@ -67,6 +67,13 @@ jobs:
           cd tests/e2e
           npm test
 
+  audit-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run storage audit
+        run: bash scripts/ci-audit-storage.sh
+
   bundle-size:
     runs-on: ubuntu-latest
     needs: [rust-tests]
