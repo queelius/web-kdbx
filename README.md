@@ -1,17 +1,17 @@
 # web-kdbx
 
-**Browser-side KDBX viewer, embeddable as a web component.** Opens a
-KeePass `.kdbx` in any modern browser: master password unlock, group
-navigation, search, copy-with-auto-clear, TOTP. Read-only. No backend,
-no install, no plugin.
+**Browser-side KDBX viewer and editor, embeddable as a web component.**
+Opens a KeePass `.kdbx` in any modern browser: master password unlock,
+group navigation, search, copy-with-auto-clear, TOTP, edit and add
+entries, download the modified vault. No backend, no install, no plugin.
 
 The anchor of the `*-kdbx` ecosystem. The goal is **KDBX as structured
 content on the static web**: drop the viewer into a Hugo theme, embed
 encrypted records in a static site, render shared vaults inline. v0.1
-is Layer 0 (read-only). Future layers add storage backends (Layer 1),
-multi-recipient sharing (Layer 2), and synced editing (Layer 3). The
-L1+ direction is what makes this a different product from a personal
-vault app.
+ships Layer 0 (read-only) and Layer 1 (single-browser working copy in
+localStorage, see below). Future layers add multi-recipient sharing
+(Layer 2) and synced editing (Layer 3). The L1+ direction is what
+makes this a different product from a personal vault app.
 
 ## Related work
 
@@ -27,7 +27,32 @@ KDBX as a content type on the static web, plus tooling around it.
 
 ## Status
 
-v0.1 in development.
+v0.1 in development. Layer 0 (read-only) is shipped. Layer 1 (storage)
+is shipped as of the L1 Phase 1-4 series (see `git log` for commits
+35bf76d..bb30f11).
+
+## L1 capability
+
+v0.1's L1 storage layer is shipped as of the L1 Phase 1-4 series
+(commits 35bf76d..bb30f11).
+
+Mode 1 (hosted vault): The static page bundles a specific `.kdbx`. The
+browser's localStorage holds your working copy. Edits auto-save to
+localStorage; Download exports the current state as a `.kdbx` file;
+Discard Local Changes reverts to the bundled canonical version.
+
+Mode 2 (BYO): File-pick or drag-drop a `.kdbx`. Edits are in-memory
+only; click Download to save your changes as a `.kdbx` file.
+
+Both modes support: edit existing entries, add new entries, copy with
+auto-clear, TOTP, search, lock. The audit-storage CI gate enforces
+that localStorage writes are confined to one helper module
+(`www/storage.js`), and IndexedDB / OPFS / Service Worker / cookies
+are forbidden by construction.
+
+For the design rationale (URL-as-vault-identity, whole-blob
+localStorage rather than patches, why FSA was rejected), see
+`docs/superpowers/specs/2026-05-06-web-kdbx-l1-storage-design.md`.
 
 ## Architecture
 
@@ -84,7 +109,9 @@ See `docs/testing.md` for details. Manual cross-browser verification:
 - The .kdbx is encrypted; the remote sees only ciphertext.
 - Passwords masked by default; reveal-on-click per field.
 - Copy-with-auto-clear (12s, KeePassXC convention).
-- No persistence: no localStorage, no IndexedDB, no Service Worker.
+- L1 working copies are stored in localStorage as the encrypted KDBX
+  blob (Mode 1 only); no IndexedDB, no Service Worker, no cookies. The
+  audit-storage CI gate enforces this. Mode 2 (BYO) is in-memory only.
 - Lock = drop the WASM Vault. Plaintext zeroized.
 
 See `docs/superpowers/specs/2026-04-29-web-kdbx-design.md` for the full

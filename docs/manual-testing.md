@@ -49,3 +49,44 @@ fetched automatically and the password prompt appears.
 Open a real vault with hundreds of entries. Verify search responds within
 200ms of typing, group tree renders in under 1 second, TOTP refresh
 doesn't visibly stutter.
+
+## L1 Manual Smoke
+
+### Mode 1 (hosted vault)
+
+For each browser (Firefox, Chromium, Safari, mobile Safari, mobile Chrome):
+
+- [ ] Open the bundled-test page (or a Mode 1 deployment)
+- [ ] Unlock with the master password
+- [ ] Verify the mode banner shows "Editing vault from {filename}. Changes save to this browser."
+- [ ] Click an entry; click Edit
+- [ ] Modify a non-protected field (URL is convenient); click Save
+- [ ] Verify the read view shows the new value
+- [ ] Verify the mode banner now shows "...click Download to export, Discard Local Changes to revert."
+- [ ] Reload the page; unlock again
+- [ ] Verify the edit persisted (localStorage working copy)
+- [ ] Click Download Vault
+- [ ] Verify a `.kdbx` file downloads with sensible filename
+- [ ] Optionally: open the downloaded file in KeePassXC; verify the edit is present
+- [ ] Click Discard Local Changes; confirm the dialog
+- [ ] Page reloads; unlock; verify the canonical (pre-edit) state is restored
+
+### Mode 2 (BYO)
+
+For each browser:
+
+- [ ] Open the default page
+- [ ] Verify "BYO vault" banner is NOT shown until a file is loaded
+- [ ] File-pick or drag-drop a .kdbx file
+- [ ] Unlock with the master password
+- [ ] Verify the mode banner shows "BYO vault. Changes are in memory only. Click Download to save."
+- [ ] Verify the Discard Local Changes button is NOT visible (Mode 1 only)
+- [ ] Edit an entry; verify changes are reflected in read view
+- [ ] Click Download Vault; verify download triggers
+- [ ] Reload the page
+- [ ] Verify the file picker reappears (no working copy persisted in BYO mode)
+
+### Edge cases
+
+- [ ] Quota exhaustion: pre-fill localStorage to near quota (developer tools), attempt to save an edit; verify the friendly error message appears
+- [ ] Storage isolation: open the same vault on `http://localhost:8000` and a different origin (e.g., `http://127.0.0.1:8000`); verify the two have independent working copies
