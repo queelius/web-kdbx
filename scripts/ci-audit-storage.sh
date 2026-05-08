@@ -12,11 +12,11 @@ cd "$(dirname "$0")/.."   # repo root
 violations=0
 
 # Check 1: localStorage writes outside www/storage.js
-# Filter out comment-only lines to avoid false positives on documentation
+# Exclude comment-only lines (where content starts with //) but not trailing comments (// mid-line).
 echo "Checking localStorage write scope..."
 ls_writes=$(grep -rEn 'localStorage\.(setItem|removeItem|clear)|localStorage\[' www/ \
     --include='*.js' \
-    --exclude='storage.js' | grep -v '\/\/' || true)
+    --exclude='storage.js' | grep -v ':[[:space:]]*\/\/' || true)
 if [ -n "$ls_writes" ]; then
     echo "FAIL: localStorage writes outside www/storage.js:"
     echo "$ls_writes"
@@ -24,10 +24,11 @@ if [ -n "$ls_writes" ]; then
 fi
 
 # Check 2: forbidden persistence APIs anywhere in www/
+# Exclude comment-only lines (where content starts with //) but not trailing comments.
 echo "Checking forbidden persistence APIs..."
 forbidden=$(grep -rEn 'indexedDB|navigator\.storage\.getDirectory|serviceWorker\.register|caches\.open|document\.cookie' www/ \
     --include='*.js' \
-    --exclude-dir='__tests__' || true)
+    --exclude-dir='__tests__' | grep -v ':[[:space:]]*\/\/' || true)
 if [ -n "$forbidden" ]; then
     echo "FAIL: forbidden persistence API usage:"
     echo "$forbidden"
