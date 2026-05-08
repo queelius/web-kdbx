@@ -68,7 +68,7 @@ test.describe('add-entry flow (Mode 1, persisted via localStorage)', () => {
     await page.locator('vault-add-entry button:has-text("Save")').click();
 
     // The list pane returns to read mode and now shows the new entry
-    // alongside the original Chase entry.
+    // alongside the original "Test Entry" from the bundled fixture.
     await expect(page.locator('vault-add-entry')).toHaveCount(0);
     await expect(page.locator('vault-list')).toContainText(NEW_TITLE);
 

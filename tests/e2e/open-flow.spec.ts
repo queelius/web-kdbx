@@ -33,6 +33,11 @@ test.describe('open flow', () => {
 
   test('non-kdbx file shows file-type error on drop', async ({ page }) => {
     await page.goto('/www/');
+    // The vault-opener web component renders into the light DOM after wasm
+    // init resolves. Wait for #dropzone to exist before dispatching a drop
+    // event into it, otherwise the evaluate races the component's first
+    // render and querySelector returns null.
+    await expect(page.locator('#dropzone')).toBeVisible();
     await page.evaluate(() => {
       const dropzone = document.querySelector('#dropzone');
       const dataTransfer = new DataTransfer();

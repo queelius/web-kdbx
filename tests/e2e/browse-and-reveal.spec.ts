@@ -18,7 +18,7 @@ test('clicking a group shows entries', async ({ page }) => {
   await unlock(page, 'add_entry/after.kdbx');
   await page.locator('vault-tree [data-uuid]').first().click();
   await expect(page.locator('vault-list li')).toHaveCount(1);
-  await expect(page.locator('vault-list')).toContainText('Chase');
+  await expect(page.locator('vault-list')).toContainText('Test Entry');
 });
 
 test('clicking an entry shows detail with masked Password', async ({ page }) => {
@@ -51,7 +51,7 @@ test('console.log is not a side channel for plaintext', async ({ page }) => {
 
 test('search across visible fields finds matching entries', async ({ page }) => {
   await unlock(page, 'add_entry/after.kdbx');
-  await page.locator('vault-search input').fill('Chase');
+  await page.locator('vault-search input').fill('Test');
   await page.waitForTimeout(200);
-  await expect(page.locator('vault-list')).toContainText('Chase');
+  await expect(page.locator('vault-list')).toContainText('Test Entry');
 });
