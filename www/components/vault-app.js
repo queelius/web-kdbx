@@ -1,5 +1,10 @@
 import { el, showToast } from './util.js';
-import { loadVaultBytes, saveWorkingCopy, vaultIdFromAttrs } from '../storage.js';
+import {
+  loadVaultBytes,
+  loadWorkingCopy,
+  saveWorkingCopy,
+  vaultIdFromAttrs,
+} from '../storage.js';
 
 class VaultApp extends HTMLElement {
   constructor() {
@@ -171,6 +176,63 @@ class VaultApp extends HTMLElement {
     );
   }
 
+  /**
+   * Return the current encrypted KDBX bytes, ready to download.
+   *
+   * Rule (per Task 9 of the L1 plan):
+   *   - If the vault is unlocked, ALWAYS re-encrypt via `Vault::save_to_bytes`.
+   *     This captures any unsaved in-memory edits (e.g., mid-edit form state)
+   *     that may not yet have flowed through `_persistAndNotify`. What the
+   *     user sees on screen is what they download.
+   *   - If the vault is locked AND a working copy exists in localStorage
+   *     (Mode 1), fall back to that. The bundled canonical bytes are not
+   *     retained in JS after unlock (the opener nulls `bytes` to keep the
+   *     WASM Vault as the sole holder), so locked Mode 2 has no source.
+   *
+   * Throws an Error with a user-facing message when bytes cannot be produced
+   * (e.g., locked Mode 2 with no working copy).
+   *
+   * @returns {Uint8Array}
+   */
+  currentBytes() {
+    if (this.vault) {
+      return this.vault.save_to_bytes();
+    }
+    if (this._vaultId) {
+      const working = loadWorkingCopy(this._vaultId);
+      if (working) return working;
+    }
+    throw new Error('Vault is locked. Unlock to download.');
+  }
+
+  /**
+   * Suggested filename for the downloaded vault.
+   *
+   * Mode 1 (hosted): the last path segment of `vault-url`, e.g. `vault.kdbx`.
+   * Mode 2 (BYO):    a default of `vault.kdbx`. We do not retain the
+   *                  user-uploaded filename across unlock today; if that
+   *                  becomes desirable, the opener can pass it via the
+   *                  `vault-opened` event detail.
+   *
+   * The result is sanitized for filesystem-safe characters and constrained
+   * to a `.kdbx` extension, so an untrusted Mode 1 path or future Mode 2
+   * upload name cannot inject path separators or shell metacharacters into
+   * the download attribute.
+   *
+   * @returns {string}
+   */
+  suggestedFilename() {
+    const vaultUrl = this.getAttribute('vault-url');
+    let candidate = 'vault.kdbx';
+    if (vaultUrl) {
+      const trimmed = vaultUrl.split(/[?#]/)[0];
+      const segments = trimmed.split('/').filter((s) => s.length > 0);
+      const last = segments.length > 0 ? segments[segments.length - 1] : '';
+      if (last) candidate = last;
+    }
+    return sanitizeFilename(candidate);
+  }
+
   renderUnlocked() {
     const tree = el('vault-tree', { class: 'pane' });
     const list = el('vault-list', { class: 'pane' });
@@ -184,6 +246,7 @@ class VaultApp extends HTMLElement {
         el('strong', {}, [this.vault.name() || 'Vault']),
         el('span', { style: 'color:var(--muted)' }, [this.vault.version()]),
         el('vault-search', { style: 'flex:1' }),
+        el('vault-download-button'),
         el('vault-lock-button'),
       ]),
       el('div', { class: 'three-pane' }, [tree, list, detail])
@@ -287,6 +350,31 @@ class VaultApp extends HTMLElement {
     // present), and a Mode 2 lock returns to the file picker.
     this._initLoad();
   }
+}
+
+/**
+ * Reduce a candidate filename to filesystem-safe ASCII and force a `.kdbx`
+ * extension. Used by `<vault-app>.suggestedFilename()` to keep an untrusted
+ * `vault-url` value or future Mode 2 upload name from injecting path
+ * separators or shell metacharacters into the anchor's `download` attribute.
+ *
+ * Rules:
+ *   - Drop any path components; keep only the last segment.
+ *   - Replace anything outside [A-Za-z0-9._-] with `_`.
+ *   - Cap length at 64 chars (excluding extension).
+ *   - Force `.kdbx` extension.
+ *   - Fall back to `vault.kdbx` if the result is empty after sanitization.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function sanitizeFilename(name) {
+  if (!name || typeof name !== 'string') return 'vault.kdbx';
+  const lastSegment = name.split(/[\\/]/).pop() || '';
+  const stripped = lastSegment.replace(/\.kdbx$/i, '');
+  const safe = stripped.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 64);
+  if (!safe) return 'vault.kdbx';
+  return `${safe}.kdbx`;
 }
 
 customElements.define('vault-app', VaultApp);
