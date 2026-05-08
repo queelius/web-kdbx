@@ -1,5 +1,6 @@
 import { el, showToast } from './util.js';
 import {
+  hasWorkingCopy,
   loadVaultBytes,
   loadWorkingCopy,
   saveWorkingCopy,
@@ -17,6 +18,9 @@ class VaultApp extends HTMLElement {
     this._vaultId = null;
     this._isWorkingCopy = false;
     this._isHostedMode = false;
+    // Mode banner element; created in renderUnlocked, refreshed by
+    // _updateBanner on lock/unlock and vault:dirty.
+    this._bannerEl = null;
   }
 
   connectedCallback() {
@@ -29,6 +33,11 @@ class VaultApp extends HTMLElement {
     this.addEventListener('copy-totp', (e) => this.handleCopyTotp(e));
     this.addEventListener('totp-refresh-request', (e) => this.handleTotpRefresh(e));
     this.addEventListener('lock', () => this.handleLock());
+    // The mode banner reflects working-copy state, which can flip on the
+    // first edit (Mode 1: canonical -> working copy). _persistAndNotify
+    // fires vault:dirty after every successful save, so we re-render the
+    // banner each time. The cost of refreshing one <div> is negligible.
+    this.addEventListener('vault:dirty', () => this._updateBanner());
     this._initLoad();
   }
 
@@ -262,11 +271,23 @@ class VaultApp extends HTMLElement {
 
     headerChildren.push(el('vault-lock-button'));
 
+    // Mode banner sits between the header toolbar and the three-pane
+    // contents. It informs the user which deployment mode is active
+    // (hosted canonical, hosted working copy, or BYO) and what the
+    // save/download semantics are. Rendered only while unlocked; the
+    // locked UI omits it. _updateBanner fills the textContent based on
+    // current state and is re-invoked on vault:dirty.
+    const bannerStyle =
+      'padding:0.4rem 0.75rem;background:var(--panel);border-bottom:1px solid var(--border);color:var(--muted);font-size:0.85rem';
+    this._bannerEl = el('div', { class: 'mode-banner', style: bannerStyle });
+
     this.replaceChildren(
       el('header', { style: headerStyle }, headerChildren),
+      this._bannerEl,
       el('div', { class: 'three-pane' }, [tree, list, detail])
     );
 
+    this._updateBanner();
     tree.data = this.vault.group_tree();
   }
 
@@ -360,11 +381,67 @@ class VaultApp extends HTMLElement {
     navigator.clipboard.writeText('').catch(() => {});
     this.selectedGroupUuid = null;
     this.selectedEntryUuid = null;
+    // The unlocked-state banner is owned by renderUnlocked; clear the
+    // reference here so the locked render path does not retain a stale
+    // node from the prior unlock.
+    this._bannerEl = null;
     // Re-resolve initial bytes via the storage adapter so a Mode 1 lock
     // returns to the unlocker (with current localStorage working copy if
     // present), and a Mode 2 lock returns to the file picker.
     this._initLoad();
   }
+
+  /**
+   * Refresh the mode banner text to reflect current state.
+   *
+   * Three states:
+   *   - Mode 2 (BYO): no vault-url attribute. In-memory only; download is
+   *     the sole export.
+   *   - Mode 1 hosted, canonical: vault-url present, no working copy in
+   *     localStorage yet. Edits will create the working copy.
+   *   - Mode 1 hosted, working copy: vault-url present and a working copy
+   *     exists in localStorage. Download exports it; Discard Local Changes
+   *     reverts to canonical.
+   *
+   * `hasWorkingCopy` is the source of truth for the working-copy distinction.
+   * Called after the banner element is created (renderUnlocked) and after
+   * each vault:dirty event.
+   */
+  _updateBanner() {
+    if (!this._bannerEl) return;
+    const vaultUrl = this.getAttribute('vault-url');
+    if (!vaultUrl) {
+      this._bannerEl.textContent =
+        'BYO vault. Changes are in memory only. Click Download to save.';
+      return;
+    }
+    const filename = lastPathSegment(vaultUrl);
+    const hasWC = this._vaultId ? hasWorkingCopy(this._vaultId) : false;
+    if (hasWC) {
+      this._bannerEl.textContent = `Editing vault from ${filename}. Changes save to this browser; click Download to export, Discard Local Changes to revert.`;
+    } else {
+      this._bannerEl.textContent = `Editing vault from ${filename}. Changes save to this browser.`;
+    }
+  }
+}
+
+/**
+ * Extract the trailing path segment of a URL or path-like string for
+ * display in the mode banner. Strips query and hash, then returns the
+ * last non-empty segment. Falls back to the original string if no
+ * segment can be derived (e.g., a bare `vault.kdbx` returns itself).
+ *
+ * Used by `<vault-app>._updateBanner()` so a `vault-url` like
+ * `/vaults/personal.kdbx` displays as `personal.kdbx` for tidiness.
+ *
+ * @param {string} url
+ * @returns {string}
+ */
+function lastPathSegment(url) {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.split(/[?#]/)[0];
+  const segments = trimmed.split('/').filter((s) => s.length > 0);
+  return segments.length > 0 ? segments[segments.length - 1] : trimmed;
 }
 
 /**
