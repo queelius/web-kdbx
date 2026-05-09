@@ -42,7 +42,7 @@ struct Args {
 
     /// Set <vault-app vault-url="..."> for Mode 1 hosted-vault.
     /// Mutually exclusive with --inline-vault.
-    #[arg(long, value_name = "URL")]
+    #[arg(long, value_name = "URL", conflicts_with = "inline_vault")]
     vault_url: Option<String>,
 
     /// Path to a .kdbx file to base64-inline as a data: URL.
@@ -96,11 +96,67 @@ pub fn vault_app_element(vault_url: Option<&str>, vault_id: Option<&str>) -> Str
     }
 }
 
+/// Strip ES module `import` statements and `export` keywords from a JS source.
+///
+/// Single-file HTML mode concatenates several JS files into one
+/// `<script type="module">` block. Each input file may have static
+/// `import { foo } from './bar.js'` statements (single-line or multi-line)
+/// that resolve relative to the page URL: in the single-file context those
+/// fetches 404. Stripping them turns each file's exported names into plain
+/// module-scope declarations available to the rest of the concatenated code.
+///
+/// The stripper:
+///   - Drops a static `import` statement spanning from the line that starts
+///     with `import` (after trim) up to and including the line ending in `;`.
+///   - Replaces a leading `export ` token with a single space, so
+///     `export function el(...)` becomes ` function el(...)`. The exported
+///     binding remains a module-scope declaration.
+///
+/// Dynamic imports (`await import(...)`) are NOT statements, so they are
+/// untouched. We never feed `app.js` (which uses dynamic imports) into the
+/// stripper anyway.
+pub fn strip_module_syntax(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut in_import = false;
+    for line in src.split_inclusive('\n') {
+        if in_import {
+            // Skip lines until we see the import's terminating `;`.
+            if line.trim_end_matches(['\n', '\r']).ends_with(';') {
+                in_import = false;
+            }
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("import ") || trimmed.starts_with("import{") {
+            // Static import statement. Single-line if it ends in `;`.
+            if line.trim_end_matches(['\n', '\r']).ends_with(';') {
+                continue;
+            }
+            in_import = true;
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("export ") {
+            // Preserve indentation so prettier-style alignment survives.
+            let indent_len = line.len() - trimmed.len();
+            out.push_str(&line[..indent_len]);
+            out.push_str(rest);
+            continue;
+        }
+        out.push_str(line);
+    }
+    out
+}
+
 /// Render the final HTML document from its constituent parts.
+///
+/// `storage_js` and `components_js` should already have been passed through
+/// `strip_module_syntax`. `wasm_js` is the wasm-pack glue and is concatenated
+/// verbatim (its `export` declarations are valid in the same module that
+/// later references `Vault` and `__wbg_init`).
 pub fn render_html(
     wasm_b64: &str,
     wasm_js: &str,
-    app_js: &str,
+    storage_js: &str,
     components_js: &str,
     styles_css: &str,
     body_element: &str,
@@ -128,7 +184,7 @@ const wasmBytes = Uint8Array.from(atob(window.__WEB_KDBX_WASM_B64__), c => c.cha
 await __wbg_init(wasmBytes);
 globalThis.webKdbx = {{ Vault }};
 
-{app_js}
+{storage_js}
 
 {components_js}
 </script>
@@ -185,6 +241,17 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>> {
     fs::read(path).with_context(|| format!("Failed to read {}", path.display()))
 }
 
+/// Read and assemble `www/components/*.js`.
+///
+/// `util.js` is concatenated first at outer module scope so its `function el`
+/// and `function showToast` are visible to every other component. All other
+/// component files have their import-stripped content wrapped in a `{ ... }`
+/// block so each file's top-level `const`s are scoped to that block. This
+/// prevents the (legitimate) name collisions like the duplicate
+/// `CONTROL_CHAR_RE` declarations in `vault-add-entry.js` and
+/// `vault-entry-edit.js` from causing a `SyntaxError: Identifier ... has
+/// already been declared` at module top level. `customElements.define(...)`
+/// works inside a block because it has a global side effect.
 fn read_components(components_dir: &Path) -> Result<String> {
     let mut entries: Vec<_> = fs::read_dir(components_dir)
         .with_context(|| format!("Failed to read {}", components_dir.display()))?
@@ -196,13 +263,25 @@ fn read_components(components_dir: &Path) -> Result<String> {
         })
         .collect();
 
-    // Sort alphabetically to match shell glob order.
+    // Sort alphabetically so `util.js` comes before `vault-*.js` and the
+    // overall order is deterministic.
     entries.sort_by_key(|e| e.file_name());
 
     let mut combined = String::new();
     for entry in entries {
-        let content = read_to_string(&entry.path())?;
-        combined.push_str(&content);
+        let path = entry.path();
+        let stripped = strip_module_syntax(&read_to_string(&path)?);
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy();
+        if name == "util.js" {
+            // Outer module scope so `el`, `showToast` are globally visible.
+            combined.push_str(&stripped);
+        } else {
+            // Block-scope each component to isolate its `const`s.
+            combined.push_str("{\n");
+            combined.push_str(&stripped);
+            combined.push_str("\n}\n");
+        }
         combined.push('\n');
     }
     Ok(combined)
@@ -215,10 +294,8 @@ fn read_components(components_dir: &Path) -> Result<String> {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Validate mutually exclusive flags.
-    if args.vault_url.is_some() && args.inline_vault.is_some() {
-        bail!("--vault-url and --inline-vault are mutually exclusive");
-    }
+    // (clap enforces --vault-url and --inline-vault are mutually exclusive
+    // via conflicts_with on the Args struct, so no runtime check needed.)
 
     // Build WASM if needed.
     maybe_build_wasm(&args.pkg_dir)?;
@@ -228,10 +305,20 @@ fn main() -> Result<()> {
     let wasm_b64 = B64.encode(&wasm_bytes);
     let wasm_js = read_to_string(&args.pkg_dir.join("web_kdbx.js"))?;
 
-    // Read www/ assets.
-    let app_js = read_to_string(&args.www_dir.join("app.js"))?;
+    // Read www/ assets. Note: app.js is intentionally NOT included; its
+    // `import init from '../pkg/...'` and `Promise.all([import(...)])` are
+    // both redundant in single-file mode (the template already calls
+    // __wbg_init with the inlined bytes, and components are concatenated
+    // directly so dynamic imports are unneeded).
+    let storage_js_raw = read_to_string(&args.www_dir.join("storage.js"))?;
     let styles_css = read_to_string(&args.www_dir.join("styles.css"))?;
+    // read_components already strips module syntax per file and wraps each
+    // non-util component in a block scope.
     let components_js = read_components(&args.www_dir.join("components"))?;
+
+    // storage.js stays at outer module scope so its functions are visible
+    // to every component; only its module syntax needs stripping.
+    let storage_js = strip_module_syntax(&storage_js_raw);
 
     // Resolve mode.
     let (resolved_url, resolved_id): (Option<String>, Option<String>) =
@@ -254,7 +341,7 @@ fn main() -> Result<()> {
     let html = render_html(
         &wasm_b64,
         &wasm_js,
-        &app_js,
+        &storage_js,
         &components_js,
         &styles_css,
         &body_element,
@@ -284,6 +371,54 @@ mod tests {
     use base64::Engine;
     use keepass::{Database, DatabaseKey};
     use std::io::Cursor;
+
+    #[test]
+    fn strip_module_syntax_drops_imports_and_export_keyword() {
+        let src = r#"// header comment
+import { el } from './util.js';
+import {
+  hasWorkingCopy,
+  loadVaultBytes,
+} from '../storage.js';
+
+const X = 1;
+export function foo(a) {
+  return a + X;
+}
+export class Bar {
+  constructor() { this.y = 2; }
+}
+"#;
+        let out = strip_module_syntax(src);
+        // No `import` statements remain.
+        assert!(
+            !out.contains("import "),
+            "stripper left an import in the output:\n{out}"
+        );
+        // `export ` token is gone but the declarations remain.
+        assert!(
+            !out.contains("export "),
+            "stripper left an export keyword:\n{out}"
+        );
+        assert!(
+            out.contains("function foo("),
+            "function foo declaration missing"
+        );
+        assert!(out.contains("class Bar "), "class Bar declaration missing");
+        assert!(out.contains("const X = 1;"), "const declaration missing");
+        // Header comment preserved (not part of any import).
+        assert!(out.contains("// header comment"), "non-import line dropped");
+    }
+
+    #[test]
+    fn strip_module_syntax_preserves_dynamic_import() {
+        // Dynamic `import(...)` calls are expressions, not statements, and must
+        // survive. We don't bundle app.js (which has these), but the stripper
+        // must not corrupt code that contains them.
+        let src = "const m = await import('./mod.js');\n";
+        let out = strip_module_syntax(src);
+        assert_eq!(out, src, "dynamic import was incorrectly stripped");
+    }
 
     #[test]
     fn inline_vault_data_url_decrypts() {
