@@ -22,7 +22,7 @@ L1 (localStorage-backed working copy + download export) is in flight. Phase 1 of
 
 3. **Two distribution artifacts, one source.**
    - Multi-file (`pkg/web_kdbx_bg.wasm` + `pkg/web_kdbx.js`) via `wasm-pack build --target web`, served from `www/`.
-   - Single self-contained HTML (`dist/web-kdbx.html`) via `scripts/build-single-html.sh`, which base64-inlines the WASM into one file openable through `file://`. This is the kiosk / borrowed-laptop / Chromebook use case the project's positioning is built around.
+   - Single self-contained HTML (`dist/web-kdbx.html`) via `cargo run --bin web-kdbx-bundle --features bundle`, which base64-inlines the WASM into one file openable through `file://`. This is the kiosk / borrowed-laptop / Chromebook use case the project's positioning is built around. The binary also supports `--vault-url` (runtime fetch) and `--inline-vault` (data: URL blob) for Mode 1 hosted-vault embeds.
 
 4. **Four-layer test stack** (`docs/testing.md`). Layer 1: `cargo test --lib` (native, ~5 sec). Layer 2: `tests/wasm_smoke.rs` via `wasm-pack test --headless --firefox` against committed `.kdbx` fixtures in `tests/fixtures/`. Layer 3: `tests/e2e/*.spec.ts` via Playwright + Firefox (real-browser flows for open, browse, reveal, lock). Layer 4: human cross-browser smoke. CI runs 1 through 3 plus a bundle-size warning gate.
 
@@ -41,7 +41,10 @@ L1 (localStorage-backed working copy + download export) is in flight. Phase 1 of
 cd www && python3 -m http.server 8000     # then http://localhost:8000/
 
 # Single-file artifact (rebuilds WASM if stale)
-./scripts/build-single-html.sh            # → dist/web-kdbx.html
+# Feature-gated via `bundle`; supports --vault-url and --inline-vault for Mode 1 embeds.
+cargo run --bin web-kdbx-bundle --features bundle                                      # → dist/web-kdbx.html (BYO file picker)
+cargo run --bin web-kdbx-bundle --features bundle -- --vault-url https://host/my.kdbx # Mode 1: URL
+cargo run --bin web-kdbx-bundle --features bundle -- --inline-vault path/to/my.kdbx   # Mode 1: inlined blob
 
 # CI gates (run these before pushing)
 cargo fmt --check

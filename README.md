@@ -86,11 +86,21 @@ cd www && python3 -m http.server 8000
 
 Open http://localhost:8000/.
 
-For a single self-contained HTML file:
+For a single self-contained HTML file (BYO file picker, no hosted vault):
 
 ```bash
-./scripts/build-single-html.sh
+cargo run --bin web-kdbx-bundle --features bundle
 open dist/web-kdbx.html
+```
+
+To embed a specific vault (Mode 1 hosted-vault, blog embed use case):
+
+```bash
+# Fetch the .kdbx at runtime from a URL:
+cargo run --bin web-kdbx-bundle --features bundle -- --vault-url https://example.com/my.kdbx
+
+# Inline a .kdbx as a base64 data: URL (one self-contained file, no separate .kdbx to host):
+cargo run --bin web-kdbx-bundle --features bundle -- --inline-vault path/to/my.kdbx
 ```
 
 ## Test
