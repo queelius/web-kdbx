@@ -69,19 +69,25 @@ class VaultApp extends HTMLElement {
     if (initial) {
       this._vaultId = initial.vaultId;
       this._isWorkingCopy = initial.source === 'localStorage';
-      this.renderLocked(initial);
+      await this.renderLocked(initial);
     } else {
       // Mode 2 BYO. vaultId is unknown until the user picks a file; storage.js
       // helpers handle that derivation later (Task 6).
       this._vaultId = vaultIdFromAttrs({ vaultUrl, vaultId: vaultIdAttr });
-      this.renderLocked(null);
+      await this.renderLocked(null);
     }
   }
 
   /**
    * @param {{ bytes: Uint8Array, source: 'localStorage'|'bundled', vaultId: string }|null} initial
    */
-  renderLocked(initial) {
+  async renderLocked(initial) {
+    // Wait for vault-opener to be upgraded before calling its instance methods.
+    // app.js imports components in parallel via Promise.all, so the order in
+    // which customElements.define fires is non-deterministic across browsers
+    // (Firefox tends to favor source order; Chromium does not). Without this
+    // await, opener.setPreloadedBytes can throw on reload paths.
+    await customElements.whenDefined('vault-opener');
     const opener = el('vault-opener');
     if (initial) {
       // Configure preload state before connecting so connectedCallback
