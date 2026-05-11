@@ -17,7 +17,7 @@
 
 use anyhow::{Context, Result, bail};
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
-use clap::Parser;
+use clap::{ArgGroup, Parser};
 use sha2::{Digest, Sha256};
 use std::{
     fs,
@@ -35,6 +35,7 @@ use std::{
     name = "web-kdbx-bundle",
     about = "Produce a self-contained HTML file with the WASM viewer inlined"
 )]
+#[command(group(ArgGroup::new("vault_target").args(["vault_url", "inline_vault"])))]
 struct Args {
     /// Output HTML file (default: dist/web-kdbx.html)
     #[arg(short, long, value_name = "PATH", default_value = "dist/web-kdbx.html")]
@@ -52,7 +53,8 @@ struct Args {
 
     /// Override the vault-id attribute.
     /// Default for --inline-vault: derived from SHA-256 of inlined bytes.
-    #[arg(long, value_name = "ID")]
+    /// Requires --vault-url or --inline-vault.
+    #[arg(long, value_name = "ID", requires = "vault_target")]
     vault_id: Option<String>,
 
     /// Where to read wasm-pack output (default: pkg)
@@ -67,6 +69,17 @@ struct Args {
 // ---------------------------------------------------------------------------
 // Public, testable primitives
 // ---------------------------------------------------------------------------
+
+/// Escape a string for safe embedding in a double-quoted HTML attribute value.
+/// Handles the five characters that can break out of an attribute or the
+/// surrounding tag: `&`, `<`, `>`, `"`, and `'`.
+fn attr_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
 
 /// Build the vault-id from the inlined KDBX bytes when the caller does not
 /// supply an explicit id. Returns `inline-<16 hex chars>` (the first 8 bytes
@@ -83,13 +96,19 @@ pub fn kdbx_data_url(bytes: &[u8]) -> String {
 }
 
 /// Build the `<vault-app ...>` element string from the resolved mode
-/// parameters.
+/// parameters. URL and id values are HTML-attribute-escaped so characters like
+/// `"`, `<`, `>`, `&`, and `'` cannot break out of the attribute or the tag.
 pub fn vault_app_element(vault_url: Option<&str>, vault_id: Option<&str>) -> String {
     match (vault_url, vault_id) {
         (None, _) => "<vault-app></vault-app>".to_string(),
-        (Some(url), None) => format!(r#"<vault-app vault-url="{url}"></vault-app>"#),
+        (Some(url), None) => {
+            let url_esc = attr_escape(url);
+            format!(r#"<vault-app vault-url="{url_esc}"></vault-app>"#)
+        }
         (Some(url), Some(id)) => {
-            format!(r#"<vault-app vault-url="{url}" vault-id="{id}"></vault-app>"#)
+            let url_esc = attr_escape(url);
+            let id_esc = attr_escape(id);
+            format!(r#"<vault-app vault-url="{url_esc}" vault-id="{id_esc}"></vault-app>"#)
         }
     }
 }
@@ -151,6 +170,10 @@ pub fn strip_module_syntax(src: &str) -> String {
 /// `strip_module_syntax`. `wasm_js` is the wasm-pack glue and is concatenated
 /// verbatim (its `export` declarations are valid in the same module that
 /// later references `Vault` and `__wbg_init`).
+///
+/// Panics in debug builds if any JS input contains the literal string
+/// `</script>`, which would close the wrapping `<script type="module">` tag
+/// prematurely and produce broken HTML.
 pub fn render_html(
     wasm_b64: &str,
     wasm_js: &str,
@@ -159,6 +182,12 @@ pub fn render_html(
     styles_css: &str,
     body_element: &str,
 ) -> String {
+    debug_assert!(
+        !wasm_js.contains("</script>")
+            && !storage_js.contains("</script>")
+            && !components_js.contains("</script>"),
+        "input JS contains literal </script>; would break <script> tag boundary"
+    );
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -454,5 +483,47 @@ export class Bar {
         let mut cursor = Cursor::new(&decoded);
         Database::open(&mut cursor, key)
             .expect("keepass::Database::open must succeed with the test password");
+    }
+
+    #[test]
+    fn vault_app_element_escapes_attributes() {
+        // A URL containing `"`, `>`, `<` must not break out of the attribute.
+        let out = vault_app_element(Some(r#"foo"><script>"#), None);
+        // The raw `>` after the quote should NOT appear as a literal `>` after
+        // vault-url="foo.
+        assert!(
+            !out.contains(r#"vault-url="foo">"#),
+            "unescaped `>` in vault-url broke attribute boundary: {out}"
+        );
+        // The escaped form should be present.
+        assert!(
+            out.contains(r#"vault-url="foo&quot;&gt;&lt;script&gt;""#),
+            "expected escaped attribute value not found: {out}"
+        );
+        // Safe inputs pass through unmodified.
+        let safe = vault_app_element(Some("https://example.com/vault.kdbx"), Some("safe-id"));
+        assert!(
+            safe.contains(r#"vault-url="https://example.com/vault.kdbx""#),
+            "safe URL was unexpectedly mangled: {safe}"
+        );
+        assert!(
+            safe.contains(r#"vault-id="safe-id""#),
+            "safe id was unexpectedly mangled: {safe}"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "literal </script>")]
+    fn render_html_rejects_script_closer() {
+        // Any JS input containing literal </script> should trigger the
+        // debug_assert in render_html and panic in debug builds.
+        render_html(
+            "base64data",
+            "// wasm-js\n</script>\nalert(1);\n",
+            "// storage",
+            "// components",
+            "body {}",
+            "<vault-app></vault-app>",
+        );
     }
 }
