@@ -129,9 +129,19 @@ pub fn vault_app_element(vault_url: Option<&str>, vault_id: Option<&str>) -> Str
 /// untouched. `app.js` (which uses dynamic imports) is not fed to this
 /// stripper anyway.
 pub fn strip_module_syntax(src: &str) -> String {
-    /// True when this line ends a JS statement (ignoring a trailing newline).
+    /// True when this line ends a JS statement, after stripping trailing
+    /// whitespace and any trailing line comment (`//` to end of line).
+    ///
+    /// Caveat: the naive `//` strip would misidentify a `//` inside a string
+    /// literal (e.g., `import x from 'http://x.com';`). In practice no real
+    /// import uses `//` in its module specifier, so this is acceptable here.
     fn ends_statement(line: &str) -> bool {
-        line.trim_end_matches(['\n', '\r']).ends_with(';')
+        let trimmed = line.trim_end();
+        let without_comment = trimmed
+            .find("//")
+            .map_or(trimmed, |i| &trimmed[..i])
+            .trim_end();
+        without_comment.ends_with(';')
     }
 
     let mut out = String::with_capacity(src.len());
@@ -225,12 +235,28 @@ globalThis.webKdbx = {{ Vault }};
 // WASM build helper
 // ---------------------------------------------------------------------------
 
+/// Decide whether to (re)build the WASM artifact, then do it if necessary.
+///
+/// Staleness criterion: the wasm artifact is stale if any of the following is
+/// newer than `pkg/web_kdbx_bg.wasm`:
+///   - `Cargo.toml`
+///   - any `*.rs` file under `src/` (walked recursively)
+///
+/// If the `src/` walk fails (e.g., the directory does not exist or a path is
+/// unreadable), the check falls back to `Cargo.toml` only rather than failing
+/// the build.
 fn maybe_build_wasm(pkg_dir: &Path) -> Result<()> {
     let wasm_path = pkg_dir.join("web_kdbx_bg.wasm");
     let cargo_toml = Path::new("Cargo.toml");
 
-    if wasm_path.exists() && !is_newer(cargo_toml, &wasm_path) {
-        return Ok(());
+    if wasm_path.exists() {
+        let cargo_mtime = mtime(cargo_toml);
+        let src_mtime = newest_mtime_in(Path::new("src"), "rs").unwrap_or(SystemTime::UNIX_EPOCH);
+        let newest_input = cargo_mtime.max(src_mtime);
+        let wasm_mtime = mtime(&wasm_path);
+        if newest_input <= wasm_mtime {
+            return Ok(());
+        }
     }
 
     println!("Building WASM (wasm-pack build --target web --release)...");
@@ -244,15 +270,35 @@ fn maybe_build_wasm(pkg_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// True when `a` has a strictly newer mtime than `b`. Missing or unreadable
-/// metadata yields the epoch, so a missing `a` is treated as not-newer.
-fn is_newer(a: &Path, b: &Path) -> bool {
-    fn mtime(path: &Path) -> SystemTime {
-        fs::metadata(path)
-            .and_then(|m| m.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH)
+/// Walk `path` recursively and return the newest mtime among all files
+/// with the given extension. Returns `UNIX_EPOCH` if the directory is empty
+/// or the walk finds no matching files.
+fn newest_mtime_in(path: &Path, ext: &str) -> std::io::Result<SystemTime> {
+    fn walk(path: &Path, ext: &str, max: &mut SystemTime) -> std::io::Result<()> {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, ext, max)?;
+            } else if path.extension().is_some_and(|e| e == ext) {
+                let m = fs::metadata(&path)?.modified()?;
+                if m > *max {
+                    *max = m;
+                }
+            }
+        }
+        Ok(())
     }
-    mtime(a) > mtime(b)
+    let mut max = SystemTime::UNIX_EPOCH;
+    walk(path, ext, &mut max)?;
+    Ok(max)
+}
+
+/// Return the mtime of `path`, or `UNIX_EPOCH` if metadata is unavailable.
+fn mtime(path: &Path) -> SystemTime {
+    fs::metadata(path)
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +570,33 @@ export class Bar {
             "// components",
             "body {}",
             "<vault-app></vault-app>",
+        );
+    }
+
+    #[test]
+    fn strip_module_syntax_handles_trailing_comments() {
+        // Import line with a trailing // comment must be stripped.
+        let with_comment = "import { x } from './y.js'; // trailing comment\nconst Z = 1;\n";
+        let out = strip_module_syntax(with_comment);
+        assert!(
+            !out.contains("import "),
+            "import with trailing comment was not stripped: {out}"
+        );
+        assert!(
+            out.contains("const Z = 1;"),
+            "const Z line was incorrectly dropped: {out}"
+        );
+
+        // Import line with trailing whitespace only must also be stripped.
+        let with_whitespace = "import { x } from './y.js';   \nconst W = 2;\n";
+        let out2 = strip_module_syntax(with_whitespace);
+        assert!(
+            !out2.contains("import "),
+            "import with trailing whitespace was not stripped: {out2}"
+        );
+        assert!(
+            out2.contains("const W = 2;"),
+            "const W line was incorrectly dropped: {out2}"
         );
     }
 }
