@@ -249,7 +249,11 @@ class VaultApp extends HTMLElement {
     return sanitizeFilename(candidate);
   }
 
-  renderUnlocked() {
+  // Consistent with the vault-opener fix in commit 803ccc7: await
+  // whenDefined before calling instance methods on the custom element so
+  // the method is guaranteed to exist regardless of module-loading order.
+  // Firefox tends to resolve the race favorably; Chromium does not.
+  async renderUnlocked() {
     const tree = el('vault-tree', { class: 'pane' });
     const list = el('vault-list', { class: 'pane' });
     const detail = el('vault-detail', { class: 'pane' });
@@ -270,6 +274,9 @@ class VaultApp extends HTMLElement {
     // routes the clearWorkingCopy call through storage.js.
     const vaultUrl = this.getAttribute('vault-url');
     if (vaultUrl) {
+      // Wait for the element to be upgraded before calling its instance
+      // methods. Same race fix as vault-opener in commit 803ccc7.
+      await customElements.whenDefined('vault-revert-button');
       const revertBtn = el('vault-revert-button');
       revertBtn.setVaultUrl(vaultUrl);
       revertBtn.setVaultId(this._vaultId);
