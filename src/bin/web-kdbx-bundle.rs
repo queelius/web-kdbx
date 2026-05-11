@@ -69,14 +69,12 @@ struct Args {
 // ---------------------------------------------------------------------------
 
 /// Build the vault-id from the inlined KDBX bytes when the caller does not
-/// supply an explicit id. Returns `inline-<16 hex chars>`.
+/// supply an explicit id. Returns `inline-<16 hex chars>` (the first 8 bytes
+/// of the SHA-256 of the inlined bytes).
 pub fn derive_vault_id(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    let hash = hasher.finalize();
-    // First 8 bytes = 16 hex chars.
-    let hex: String = hash[..8].iter().map(|b| format!("{b:02x}")).collect();
-    format!("inline-{hex}")
+    let hash = Sha256::digest(bytes);
+    let prefix = u64::from_be_bytes(hash[..8].try_into().expect("8 bytes"));
+    format!("inline-{prefix:016x}")
 }
 
 /// Build the data: URL string for inlined KDBX bytes.
@@ -99,29 +97,30 @@ pub fn vault_app_element(vault_url: Option<&str>, vault_id: Option<&str>) -> Str
 /// Strip ES module `import` statements and `export` keywords from a JS source.
 ///
 /// Single-file HTML mode concatenates several JS files into one
-/// `<script type="module">` block. Each input file may have static
-/// `import { foo } from './bar.js'` statements (single-line or multi-line)
-/// that resolve relative to the page URL: in the single-file context those
-/// fetches 404. Stripping them turns each file's exported names into plain
-/// module-scope declarations available to the rest of the concatenated code.
+/// `<script type="module">` block. Static `import` statements would 404 on
+/// their relative paths, so we drop them; their exported names become
+/// module-scope declarations once the leading `export ` is removed.
 ///
-/// The stripper:
-///   - Drops a static `import` statement spanning from the line that starts
-///     with `import` (after trim) up to and including the line ending in `;`.
-///   - Replaces a leading `export ` token with a single space, so
-///     `export function el(...)` becomes ` function el(...)`. The exported
-///     binding remains a module-scope declaration.
+///   - Drops static `import ... from '...';` statements (single-line or
+///     multi-line, terminated by `;`).
+///   - Replaces a leading `export ` token with a single space, preserving
+///     indentation.
 ///
-/// Dynamic imports (`await import(...)`) are NOT statements, so they are
-/// untouched. We never feed `app.js` (which uses dynamic imports) into the
+/// Dynamic `import(...)` calls are expressions, not statements, and are
+/// untouched. `app.js` (which uses dynamic imports) is not fed to this
 /// stripper anyway.
 pub fn strip_module_syntax(src: &str) -> String {
+    /// True when this line ends a JS statement (ignoring a trailing newline).
+    fn ends_statement(line: &str) -> bool {
+        line.trim_end_matches(['\n', '\r']).ends_with(';')
+    }
+
     let mut out = String::with_capacity(src.len());
     let mut in_import = false;
     for line in src.split_inclusive('\n') {
         if in_import {
             // Skip lines until we see the import's terminating `;`.
-            if line.trim_end_matches(['\n', '\r']).ends_with(';') {
+            if ends_statement(line) {
                 in_import = false;
             }
             continue;
@@ -129,10 +128,9 @@ pub fn strip_module_syntax(src: &str) -> String {
         let trimmed = line.trim_start();
         if trimmed.starts_with("import ") || trimmed.starts_with("import{") {
             // Static import statement. Single-line if it ends in `;`.
-            if line.trim_end_matches(['\n', '\r']).ends_with(';') {
-                continue;
+            if !ends_statement(line) {
+                in_import = true;
             }
-            in_import = true;
             continue;
         }
         if let Some(rest) = trimmed.strip_prefix("export ") {
@@ -202,31 +200,30 @@ fn maybe_build_wasm(pkg_dir: &Path) -> Result<()> {
     let wasm_path = pkg_dir.join("web_kdbx_bg.wasm");
     let cargo_toml = Path::new("Cargo.toml");
 
-    let wasm_missing = !wasm_path.exists();
-    let cargo_newer = if !wasm_missing && cargo_toml.exists() {
-        let cargo_mtime = fs::metadata(cargo_toml)
-            .and_then(|m| m.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-        let wasm_mtime = fs::metadata(&wasm_path)
-            .and_then(|m| m.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-        cargo_mtime > wasm_mtime
-    } else {
-        false
-    };
-
-    if wasm_missing || cargo_newer {
-        println!("Building WASM (wasm-pack build --target web --release)...");
-        let status = Command::new("wasm-pack")
-            .args(["build", "--target", "web", "--release"])
-            .status()
-            .context("Failed to run wasm-pack. Is it installed and on PATH?")?;
-        if !status.success() {
-            bail!("wasm-pack build failed (exit status {status})");
-        }
+    if wasm_path.exists() && !is_newer(cargo_toml, &wasm_path) {
+        return Ok(());
     }
 
+    println!("Building WASM (wasm-pack build --target web --release)...");
+    let status = Command::new("wasm-pack")
+        .args(["build", "--target", "web", "--release"])
+        .status()
+        .context("Failed to run wasm-pack. Is it installed and on PATH?")?;
+    if !status.success() {
+        bail!("wasm-pack build failed (exit status {status})");
+    }
     Ok(())
+}
+
+/// True when `a` has a strictly newer mtime than `b`. Missing or unreadable
+/// metadata yields the epoch, so a missing `a` is treated as not-newer.
+fn is_newer(a: &Path, b: &Path) -> bool {
+    fn mtime(path: &Path) -> SystemTime {
+        fs::metadata(path)
+            .and_then(|m| m.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH)
+    }
+    mtime(a) > mtime(b)
 }
 
 // ---------------------------------------------------------------------------
@@ -310,15 +307,14 @@ fn main() -> Result<()> {
     // both redundant in single-file mode (the template already calls
     // __wbg_init with the inlined bytes, and components are concatenated
     // directly so dynamic imports are unneeded).
-    let storage_js_raw = read_to_string(&args.www_dir.join("storage.js"))?;
-    let styles_css = read_to_string(&args.www_dir.join("styles.css"))?;
-    // read_components already strips module syntax per file and wraps each
-    // non-util component in a block scope.
-    let components_js = read_components(&args.www_dir.join("components"))?;
-
+    //
     // storage.js stays at outer module scope so its functions are visible
     // to every component; only its module syntax needs stripping.
-    let storage_js = strip_module_syntax(&storage_js_raw);
+    // read_components already strips module syntax per file and wraps each
+    // non-util component in a block scope.
+    let storage_js = strip_module_syntax(&read_to_string(&args.www_dir.join("storage.js"))?);
+    let styles_css = read_to_string(&args.www_dir.join("styles.css"))?;
+    let components_js = read_components(&args.www_dir.join("components"))?;
 
     // Resolve mode.
     let (resolved_url, resolved_id): (Option<String>, Option<String>) =
@@ -368,7 +364,6 @@ fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine;
     use keepass::{Database, DatabaseKey};
     use std::io::Cursor;
 
